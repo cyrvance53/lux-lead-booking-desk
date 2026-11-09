@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="owner" content="Lux Automations — Edmonton, Canada">
+<meta name="x-lux-fingerprint" content="lux-builderio-2026-lead-booking-desk">
+<title>Lux Lead &amp; Booking Desk — Agent-Native</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;background:#0f1420;color:#e8edf5}
+  header{padding:16px 20px;background:#16203a;border-bottom:2px solid #2e7cf6}
+  header h1{margin:0;font-size:20px} header p{margin:4px 0 0;color:#9fb4d8;font-size:13px}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px}
+  section{background:#182238;border:1px solid #26355c;border-radius:10px;padding:14px}
+  h2{font-size:15px;margin:0 0 10px;color:#7db1ff}
+  input,select,textarea,button{font:inherit;border-radius:6px;border:1px solid #35508c;background:#0f1830;color:#e8edf5;padding:7px 9px}
+  button{background:#2e7cf6;border:none;cursor:pointer;font-weight:600} button.ghost{background:#26355c} button.danger{background:#a33327}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .card{background:#101a30;border:1px solid #26355c;border-radius:8px;padding:9px;margin-bottom:8px;font-size:13px}
+  .tag{font-size:11px;padding:2px 7px;border-radius:99px;background:#26355c}
+  .tag.hot{background:#a33327}.tag.proposed{background:#8a6d1d;color:#fff}.tag.confirmed{background:#1d7a3a}.tag.cancelled{background:#444}
+  #chatlog{height:180px;overflow:auto;background:#0b1120;border-radius:8px;padding:9px;font-size:13px;margin-bottom:8px}
+  #chatlog div{margin-bottom:6px}.me{color:#7db1ff}
+  small{color:#9fb4d8}
+</style>
+</head>
+<body>
+<header>
+  <h1>Lux Lead &amp; Booking Desk</h1>
+  <p>One set of Agent-Native <code>defineAction()</code> capabilities — qualify, check availability, book, override, follow up — shared by this UI and the agent. Agent bookings land as <b>PROPOSED</b>; a human approves, moves or cancels them here.</p>
+</header>
+<main>
+  <section>
+    <h2>1 · Qualify a lead (UI calls qualify-lead)</h2>
+    <div class="row"><input id="lname" placeholder="Name" value="Maya Chen"><input id="lcontact" placeholder="Email or phone" value="maya@blossomdental.ca"></div>
+    <div class="row"><select id="lservice">
+      <option value="ai-receptionist">AI Voice Receptionist Setup</option>
+      <option value="chatbot">Website / WhatsApp Chatbot</option>
+      <option value="lead-booking" selected>Lead &amp; Booking System</option>
+      <option value="crm-automation">CRM / Workflow Automation</option>
+    </select></div>
+    <div class="row"><textarea id="lmsg" rows="2" style="flex:1">We miss calls after hours and need bookings handled — urgent, please send a quote this week.</textarea></div>
+    <button id="qualifyBtn">Qualify lead</button>
+    <h2 style="margin-top:16px">Leads</h2>
+    <div id="leads"></div>
+  </section>
+  <section>
+    <h2>2 · Agent (calls the same actions)</h2>
+    <div id="chatlog"></div>
+    <div class="row"><input id="chatin" style="flex:1" placeholder='Try: book lead-1  ·  approve booking-1  ·  availability chatbot'><button id="sendBtn">Send</button></div>
+    <small>Demo brain is rule-based and deterministic — the actions it calls are the real ones, identical to the buttons'.</small>
+    <h2 style="margin-top:16px">Bookings — human in control</h2>
+    <div id="bookings"></div>
+  </section>
+  <section>
+    <h2>3 · Availability (check-availability)</h2>
+    <div class="row"><select id="aservice"><option value="lead-booking">Lead &amp; Booking System</option><option value="chatbot">Chatbot</option><option value="ai-receptionist">AI Receptionist</option><option value="crm-automation">CRM Automation</option></select><button class="ghost" id="availBtn">Refresh slots</button></div>
+    <div id="slots"></div>
+  </section>
+  <section>
+    <h2>4 · Follow-up drafts (draft only — never auto-sent) &amp; activity</h2>
+    <div id="followups"></div>
+    <h2 style="margin-top:14px">Activity log</h2>
+    <div id="activity"></div>
+  </section>
+</main>
+<script>
+const api = async (path, opts) => { const r = await fetch(path, opts); return r.json(); };
+const post = (name, body) => api(`/api/actions/${name}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+async function refresh() {
+  const s = await api("/api/state");
+  document.getElementById("leads").innerHTML = s.leads.map(l => `<div class="card"><b>${l.name}</b> <span class="tag ${l.tier}">${l.tier} · ${l.score}</span><br><small>${l.id} · ${l.service} · ${l.contact || "no contact"}</small><br>${l.message}<br><button class="ghost" onclick="bookFirst('${l.id}')">Book earliest slot (UI)</button> <button class="ghost" onclick="followUp('${l.id}')">Draft follow-up</button></div>`).join("") || "<small>No leads yet.</small>";
+  document.getElementById("bookings").innerHTML = s.bookings.map(b => `<div class="card"><b>${b.name}</b> — ${b.serviceLabel}<br><small>${b.id} · ${b.date} ${b.time} · created by ${b.createdBy}</small> <span class="tag ${b.status}">${b.status}</span><br>${b.status !== "cancelled" ? `<button class="ghost" onclick="upd('${b.id}','approve')">Approve</button> <button class="ghost" onclick="moveNext('${b.id}')">Move to next slot</button> <button class="danger" onclick="upd('${b.id}','cancel')">Cancel</button>` : ""}</div>`).join("") || "<small>No bookings yet.</small>";
+  document.getElementById("followups").innerHTML = s.followUps.map(f => `<div class="card"><small>${f.id} · for ${f.leadId} · ${f.status}</small><br>${f.body}</div>`).join("") || "<small>No drafts yet.</small>";
+  document.getElementById("activity").innerHTML = s.activity.slice(0, 12).map(a => `<div class="card"><small>${a.at} · ${a.actor}</small><br>${a.text}</div>`).join("");
+  await showSlots();
+}
+async function showSlots() {
+  const svc = document.getElementById("aservice").value;
+  const a = await api(`/api/actions/check-availability?service=${svc}`);
+  document.getElementById("slots").innerHTML = a.openSlots.map(s => `<span class="tag">${s.date} ${s.time}</span>`).join(" ") || "<small>None open.</small>";
+}
+async function bookFirst(leadId) { const s = await api("/api/state"); const lead = s.leads.find(l => l.id === leadId); const a = await api(`/api/actions/check-availability?service=${lead.service}`); if (a.openSlots.length) { await post("book-appointment", { leadId, slotId: a.openSlots[0].id, actor: "ui" }); } refresh(); }
+async function followUp(leadId) { await post("send-follow-up", { leadId, actor: "ui" }); refresh(); }
+async function upd(id, change) { await post("update-booking", { bookingId: id, change, actor: "ui" }); refresh(); }
+async function moveNext(id) { const s = await api("/api/state"); const b = s.bookings.find(x => x.id === id); const open = s.slots.filter(x => !x.takenBy); if (open.length) await post("update-booking", { bookingId: id, change: "move", newSlotId: open[0].id, actor: "ui" }); refresh(); }
+document.getElementById("qualifyBtn").onclick = async () => { await post("qualify-lead", { name: document.getElementById("lname").value, contact: document.getElementById("lcontact").value, service: document.getElementById("lservice").value, message: document.getElementById("lmsg").value, actor: "ui" }); refresh(); };
+document.getElementById("availBtn").onclick = showSlots;
+const chatlog = document.getElementById("chatlog");
+async function sendChat() { const inp = document.getElementById("chatin"); const t = inp.value.trim(); if (!t) return; chatlog.innerHTML += `<div class="me"><b>You:</b> ${t}</div>`; inp.value = ""; const r = await api("/api/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: t }) }); chatlog.innerHTML += `<div><b>Agent:</b> ${r.reply}</div>`; chatlog.scrollTop = 1e6; refresh(); }
+document.getElementById("sendBtn").onclick = sendChat;
+document.getElementById("chatin").addEventListener("keydown", e => { if (e.key === "Enter") sendChat(); });
+chatlog.innerHTML = `<div><b>Agent:</b> Send me a lead as "Name, email, what they need" — or try "availability chatbot".</div>`;
+refresh();
+</script>
+</body>
+</html>

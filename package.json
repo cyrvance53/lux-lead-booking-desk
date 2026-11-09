@@ -1,0 +1,23 @@
+{
+  "name": "lux-lead-booking-desk",
+  "version": "1.0.0",
+  "description": "Lux Lead & Booking Desk - Agent-Native app for the Builder.io Agent-Native Hackathon (Lux Automations)",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test/test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@agent-native/core": "^0.222.2",
+    "zod": "^4.6.7"
+  }
+}
